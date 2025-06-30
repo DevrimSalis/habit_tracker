@@ -14,6 +14,10 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
   final _descriptionController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  
+  // Hatırlatma için yeni değişkenler
+  bool _isReminderEnabled = false;
+  TimeOfDay? _reminderTime;
 
   // Önceden tanımlanmış alışkanlık örnekleri
   final List<Map<String, String>> _habitTemplates = [
@@ -41,6 +45,40 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
     });
   }
 
+  Future<void> _selectTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _reminderTime ?? TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF667eea),
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF2D3748),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    
+    if (picked != null) {
+      setState(() {
+        _reminderTime = picked;
+        if (!_isReminderEnabled) {
+          _isReminderEnabled = true;
+        }
+      });
+    }
+  }
+
+  String _formatTimeOfDay(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
   Future<void> _saveHabit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -54,6 +92,8 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
         description: _descriptionController.text.trim(),
         createdDate: DateTime.now(),
         completedDates: [],
+        reminderTime: _isReminderEnabled ? _reminderTime : null,
+        isReminderEnabled: _isReminderEnabled,
       );
 
       await DatabaseHelper().insertHabit(habit);
@@ -425,6 +465,139 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
                 ),
                 maxLines: 3,
                 textCapitalization: TextCapitalization.sentences,
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+            
+            // Hatırlatma Ayarları
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    spreadRadius: 0,
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF667eea).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.notifications_rounded,
+                            color: Color(0xFF667eea),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Hatırlatma',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2D3748),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Hatırlatma Açık/Kapalı
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Günlük Hatırlatma',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Color(0xFF4A5568),
+                          ),
+                        ),
+                        Switch(
+                          value: _isReminderEnabled,
+                          onChanged: (value) {
+                            setState(() {
+                              _isReminderEnabled = value;
+                              if (!value) {
+                                _reminderTime = null;
+                              }
+                            });
+                          },
+                          activeColor: const Color(0xFF667eea),
+                        ),
+                      ],
+                    ),
+                    
+                    // Zaman Seçici
+                    if (_isReminderEnabled) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF667eea).withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF667eea).withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _selectTime,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.access_time_rounded,
+                                    color: Color(0xFF667eea),
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    _reminderTime != null
+                                        ? 'Saat: ${_formatTimeOfDay(_reminderTime!)}'
+                                        : 'Hatırlatma saati seç',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: _reminderTime != null
+                                          ? const Color(0xFF2D3748)
+                                          : const Color(0xFF667eea),
+                                      fontWeight: _reminderTime != null
+                                          ? FontWeight.w500
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  const Icon(
+                                    Icons.arrow_forward_ios_rounded,
+                                    color: Color(0xFF667eea),
+                                    size: 16,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
             
