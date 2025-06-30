@@ -21,11 +21,25 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // Versiyon artırıldı
       onCreate: (db, version) {
         return db.execute(
-          'CREATE TABLE habits(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, description TEXT, created_date TEXT, completed_dates TEXT)',
+          '''CREATE TABLE habits(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            name TEXT, 
+            description TEXT, 
+            created_date TEXT, 
+            completed_dates TEXT,
+            reminder_time TEXT,
+            is_reminder_enabled INTEGER DEFAULT 0
+          )''',
         );
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE habits ADD COLUMN reminder_time TEXT');
+          await db.execute('ALTER TABLE habits ADD COLUMN is_reminder_enabled INTEGER DEFAULT 0');
+        }
       },
     );
   }
