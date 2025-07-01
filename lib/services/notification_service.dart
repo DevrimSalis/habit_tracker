@@ -3,6 +3,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/habit.dart';
 
@@ -10,6 +11,8 @@ class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   static FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
+  
+  static const platform = MethodChannel('com.example.habit_tracker/battery');
 
   NotificationService._internal();
 
@@ -362,6 +365,183 @@ class NotificationService {
     }
     
     return permissions;
+  }
+
+  // İzin kontrolü ve isteme metodları
+  static Future<bool> requestAllPermissions() async {
+    try {
+      // 1. Android native bildirim izni
+      final bool? nativePermission = await platform.invokeMethod('requestNotificationPermission');
+      
+      if (kDebugMode) {
+        debugPrint("📱 Native bildirim izni: $nativePermission");
+      }
+      
+      // 2. Flutter plugin izinleri
+      await _requestNotificationPermissions();
+      
+      // 3. Pil optimizasyonu - Sadece gerektiğinde iste
+      final bool? batteryOptimized = await platform.invokeMethod('checkBatteryOptimization');
+      if (batteryOptimized == true) {
+        if (kDebugMode) {
+          debugPrint("⚠️ Pil optimizasyonu aktif, kullanıcıya seçenek sunuluyor");
+        }
+        // Burada kullanıcıya dialog gösterip sorabilirsiniz
+        // await platform.invokeMethod('requestBatteryOptimization');
+      } else {
+        if (kDebugMode) {
+          debugPrint("✅ Pil optimizasyonu zaten devre dışı");
+        }
+      }
+      
+      // 4. İzin durumunu kontrol et
+      final permissions = await checkAllPermissions();
+      
+      if (kDebugMode) {
+        debugPrint("📱 Tüm izin durumları:");
+        permissions.forEach((key, value) {
+          debugPrint("  - $key: $value");
+        });
+      }
+      
+      return permissions.values.every((granted) => granted == true);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint("❌ İzin isteme hatası: $e");
+      }
+      return false;
+    }
+  }
+
+  static Future<Map<String, bool>> checkAllPermissions() async {
+    final permissions = <String, bool>{};
+    
+    try {
+      // Native Android izni
+      final bool? nativeCheck = await platform.invokeMethod('checkNotificationPermission');
+      permissions['nativeNotification'] = nativeCheck ?? false;
+      
+      // Plugin izinleri
+      permissions['notification'] = await Permission.notification.isGranted;
+      permissions['scheduleExactAlarm'] = await Permission.scheduleExactAlarm.isGranted;
+      
+      // Flutter local notifications
+      final androidImpl = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      
+      if (androidImpl != null) {
+        permissions['areNotificationsEnabled'] = 
+            await androidImpl.areNotificationsEnabled() ?? false;
+      }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint("❌ İzin kontrolü hatası: $e");
+      }
+    }
+    
+    return permissions;
+  }
+
+  static Future<void> openNotificationSettings() async {
+    try {
+      await platform.invokeMethod('openNotificationSettings');
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint("❌ Ayarları açma hatası: $e");
+      }
+    }
+  }
+
+  // Pil optimizasyonu kontrolü ve isteği
+  static Future<bool> checkAndRequestBatteryOptimization() async {
+    try {
+      final bool? isOptimized = await platform.invokeMethod('checkBatteryOptimization');
+      
+      if (kDebugMode) {
+        debugPrint("🔋 Pil optimizasyonu durumu: $isOptimized");
+      }
+      
+      if (isOptimized == true) {
+        // Kullanıcıya pil optimizasyonunu kapatmayı öner
+        return await platform.invokeMethod('requestBatteryOptimization') ?? false;
+      }
+      
+      return true; // Zaten optimizasyon kapalı
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint("❌ Pil optimizasyonu kontrolü hatası: $e");
+      }
+      return false;
+    }
+  }
+
+  // Gelişmiş bildirim test metodu
+  static Future<void> testNotificationWithFullCheck() async {
+    try {
+      if (kDebugMode) {
+        debugPrint("🧪 Detaylı bildirim testi başlıyor...");
+      }
+      
+      // İzinleri kontrol et
+      final permissions = await checkAllPermissions();
+      if (kDebugMode) {
+        debugPrint("📋 İzin durumları: $permissions");
+      }
+      
+      // Eksik izin varsa kullanıcıyı uyar
+      final hasAllPermissions = permissions.values.every((granted) => granted == true);
+      if (!hasAllPermissions) {
+        if (kDebugMode) {
+          debugPrint("⚠️ Eksik izinler tespit edildi, kullanıcı uyarılacak");
+        }
+      }
+      
+      // Test bildirimi gönder
+      await showTestNotification();
+      
+      // 2 dakika sonra zamanlı test
+      final now = tz.TZDateTime.now(tz.getLocation('Europe/Istanbul'));
+      final testTime = now.add(const Duration(minutes: 2));
+      
+      await flutterLocalNotificationsPlugin.zonedSchedule(
+        997,
+        '🔥 Kritik Test',
+        'Bu bildirim ${testTime.hour}:${testTime.minute.toString().padLeft(2, '0')} zamanlandı. Geldi mi?',
+        testTime,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'habit_reminders',
+            'Alışkanlık Hatırlatmaları',
+            channelDescription: 'Test bildirimi',
+            importance: Importance.max,
+            priority: Priority.max,
+            icon: '@mipmap/ic_launcher',
+            color: Color(0xFF667eea),
+            playSound: true,
+            enableVibration: true,
+            // Kritical ayarlar
+            fullScreenIntent: true,
+            category: AndroidNotificationCategory.alarm,
+            visibility: NotificationVisibility.public,
+            showWhen: true,
+            autoCancel: false,
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: 
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+      
+      if (kDebugMode) {
+        debugPrint("✅ Test bildirimi 2 dakika sonraya zamanlandı: $testTime");
+      }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint("❌ Test bildirimi hatası: $e");
+      }
+    }
   }
 
   static tz.TZDateTime getTurkeyTime() {

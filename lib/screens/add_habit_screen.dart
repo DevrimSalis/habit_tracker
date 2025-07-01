@@ -91,7 +91,7 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
     return '$hour:$minute';
   }
 
-  Future<void> _saveHabit() async {
+Future<void> _saveHabit() async {
   if (!_formKey.currentState!.validate()) return;
 
   setState(() {
@@ -99,6 +99,57 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
   });
 
   try {
+    // Eğer hatırlatma etkinse, önce izinleri kontrol et
+    if (_isReminderEnabled && _reminderTime != null) {
+      if (kDebugMode) {
+        debugPrint("🔔 Hatırlatma etkin, izinler kontrol ediliyor...");
+      }
+      
+      // İzinleri kontrol et ve gerekirse iste
+      final hasPermissions = await NotificationService.requestAllPermissions();
+      
+      if (!hasPermissions) {
+        if (!mounted) return;
+        
+        // İzin alamadıysak kullanıcıyı uyar
+        final shouldContinue = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Bildirim İzni Gerekli'),
+            content: const Text(
+              'Hatırlatmalar için bildirim izni gerekli. '
+              'Alışkanlığı kaydedip sonra ayarlardan izinleri verebilirsiniz. '
+              'Devam etmek istiyor musunuz?'
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('İptal'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await NotificationService.openNotificationSettings();
+                  if (context.mounted) Navigator.pop(context, false);
+                },
+                child: const Text('Ayarlara Git'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Devam Et'),
+              ),
+            ],
+          ),
+        );
+        
+        if (shouldContinue != true) {
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+    }
+
     final habit = Habit(
       name: _nameController.text.trim(),
       description: _descriptionController.text.trim(),
@@ -111,16 +162,19 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
     // Alışkanlığı veritabanına kaydet
     await DatabaseHelper().insertHabit(habit);
 
-    // ÖNEMLİ: Alışkanlık kaydedildikten sonra ID'si oluşur
-    // Bu yüzden tekrar veritabanından alıp notification'ı zamanlamalıyız
+    // Kaydedilen alışkanlığı geri al (ID ile birlikte)
     final savedHabits = await DatabaseHelper().getHabits();
     final savedHabit = savedHabits.lastWhere((h) => h.name == habit.name);
 
     // Hatırlatma zamanla
     if (savedHabit.isReminderEnabled && savedHabit.reminderTime != null) {
       await NotificationService.scheduleHabitReminder(savedHabit);
+      
       if (kDebugMode) {
         debugPrint("✅ Hatırlatma zamanlandı: ${savedHabit.name}");
+        
+        // Test amaçlı hemen bir test bildirimi gönder
+        await NotificationService.testNotificationWithFullCheck();
       }
     }
 
@@ -128,11 +182,12 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
 
     _showSuccessSnackBar('Alışkanlık başarıyla eklendi!');
     Navigator.pop(context, true);
+    
   } catch (e) {
     if (!mounted) return;
     
     debugPrint("❌ Alışkanlık kaydetme hatası: $e");
-    _showErrorSnackBar('Alışkanlık eklenirken hata oluştu');
+    _showErrorSnackBar('Alışkanlık eklenirken hata oluştu: $e');
   } finally {
     if (mounted) {
       setState(() {
