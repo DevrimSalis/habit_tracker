@@ -51,8 +51,21 @@ android {
     }
 
     buildTypes {
-        release {
+        debug {
             signingConfig signingConfigs.debug
+            // Debug için her şey kapalı
+            minifyEnabled false
+            shrinkResources false
+        }
+        release {
+            // Release için ikisini de aynı anda açın/kapatın
+            signingConfig signingConfigs.debug 
+            minifyEnabled false
+            shrinkResources false
+            // Veya ikisini de açmak isterseniz:
+            // minifyEnabled true
+            // shrinkResources true
+            // proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

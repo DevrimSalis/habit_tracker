@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:habit_tracker/services/notification_service.dart';
 import '../models/habit.dart';
 import '../services/database_helper.dart';
 
@@ -90,41 +92,55 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
   }
 
   Future<void> _saveHabit() async {
-    if (!_formKey.currentState!.validate()) return;
+  if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      final habit = Habit(
-        name: _nameController.text.trim(),
-        description: _descriptionController.text.trim(),
-        createdDate: DateTime.now(),
-        completedDates: [],
-        reminderTime: _isReminderEnabled ? _reminderTime : null,
-        isReminderEnabled: _isReminderEnabled,
-      );
+  try {
+    final habit = Habit(
+      name: _nameController.text.trim(),
+      description: _descriptionController.text.trim(),
+      createdDate: DateTime.now(),
+      completedDates: [],
+      reminderTime: _isReminderEnabled ? _reminderTime : null,
+      isReminderEnabled: _isReminderEnabled,
+    );
 
-      await DatabaseHelper().insertHabit(habit);
+    // Alışkanlığı veritabanına kaydet
+    await DatabaseHelper().insertHabit(habit);
 
-      if (!mounted) return;
+    // ÖNEMLİ: Alışkanlık kaydedildikten sonra ID'si oluşur
+    // Bu yüzden tekrar veritabanından alıp notification'ı zamanlamalıyız
+    final savedHabits = await DatabaseHelper().getHabits();
+    final savedHabit = savedHabits.lastWhere((h) => h.name == habit.name);
 
-      _showSuccessSnackBar('Alışkanlık başarıyla eklendi!');
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      
-      _showErrorSnackBar('Alışkanlık eklenirken hata oluştu');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+    // Hatırlatma zamanla
+    if (savedHabit.isReminderEnabled && savedHabit.reminderTime != null) {
+      await NotificationService.scheduleHabitReminder(savedHabit);
+      if (kDebugMode) {
+        debugPrint("✅ Hatırlatma zamanlandı: ${savedHabit.name}");
       }
     }
-  }
 
+    if (!mounted) return;
+
+    _showSuccessSnackBar('Alışkanlık başarıyla eklendi!');
+    Navigator.pop(context, true);
+  } catch (e) {
+    if (!mounted) return;
+    
+    debugPrint("❌ Alışkanlık kaydetme hatası: $e");
+    _showErrorSnackBar('Alışkanlık eklenirken hata oluştu');
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+}
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

@@ -88,7 +88,7 @@ class NotificationService {
         }
       }
 
-      // Tam alarm izni
+      // Tam alarm izni (Android 12+)
       if (await Permission.scheduleExactAlarm.isDenied) {
         final status = await Permission.scheduleExactAlarm.request();
         if (kDebugMode) {
@@ -105,6 +105,12 @@ class NotificationService {
         if (kDebugMode) {
           debugPrint("📱 Android bildirim izni: $result");
         }
+        
+        // Exact alarm izni kontrolü (Android 12+)
+        final bool? exactAlarmResult = await androidImpl.requestExactAlarmsPermission();
+        if (kDebugMode) {
+          debugPrint("⏰ Exact alarm izni: $exactAlarmResult");
+        }
       }
     } catch (e) {
       if (kDebugMode) {
@@ -120,9 +126,15 @@ class NotificationService {
   }
 
   static Future<void> scheduleHabitReminder(Habit habit) async {
-    if (!habit.isReminderEnabled || habit.reminderTime == null) return;
+    if (!habit.isReminderEnabled || habit.reminderTime == null) {
+      if (kDebugMode) {
+        debugPrint("❌ Hatırlatma etkin değil veya saat belirlenmemiş");
+      }
+      return;
+    }
 
     try {
+      // Önce eski hatırlatmayı iptal et
       await cancelHabitReminder(habit.id!);
 
       final now = tz.TZDateTime.now(tz.getLocation('Europe/Istanbul'));
@@ -141,6 +153,12 @@ class NotificationService {
       // Eğer zaman geçmişse, ertesi güne ayarla
       if (notificationTime.isBefore(now)) {
         notificationTime = notificationTime.add(const Duration(days: 1));
+      }
+
+      if (kDebugMode) {
+        debugPrint("🕐 Şu anki zaman: $now");
+        debugPrint("⏰ Hedef zaman: $notificationTime");
+        debugPrint("📅 Zaman farkı: ${notificationTime.difference(now).inMinutes} dakika");
       }
 
       // Günlük tekrarlama için
@@ -167,6 +185,12 @@ class NotificationService {
             fullScreenIntent: true,
             // Kategori
             category: AndroidNotificationCategory.reminder,
+            // Android için ek ayarlar
+            channelShowBadge: true,
+            showWhen: true,
+            when: null,
+            usesChronometer: false,
+            onlyAlertOnce: false,
           ),
           iOS: DarwinNotificationDetails(
             presentAlert: true,
@@ -174,6 +198,7 @@ class NotificationService {
             presentSound: true,
             sound: 'default',
             categoryIdentifier: 'habit_reminder',
+            threadIdentifier: 'habit_reminders',
           ),
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
@@ -185,6 +210,13 @@ class NotificationService {
       if (kDebugMode) {
         debugPrint("✅ Hatırlatma zamanlandı: ${habit.name} - ${formatTimeOfDay(reminderTime)}");
         debugPrint("📅 Zamanlanan saat: $notificationTime");
+        
+        // Bekleyen bildirimleri kontrol et
+        final pending = await flutterLocalNotificationsPlugin.pendingNotificationRequests();
+        debugPrint("📋 Toplam bekleyen bildirim: ${pending.length}");
+        for (var p in pending) {
+          debugPrint("  - ID: ${p.id}, Başlık: ${p.title}");
+        }
       }
     } catch (e) {
       if (kDebugMode) {
@@ -262,7 +294,7 @@ class NotificationService {
     }
   }
 
-  // 1 dakika sonra test bildirimi
+  // 1 dakika sonra test bildirimi - zamanlama test için
   static Future<void> scheduleTestNotification() async {
     try {
       final now = tz.TZDateTime.now(tz.getLocation('Europe/Istanbul'));
@@ -271,7 +303,7 @@ class NotificationService {
       await flutterLocalNotificationsPlugin.zonedSchedule(
         998,
         '⏰ Zamanlı Test',
-        'Bu bildirim 1 dakika sonra geldi!',
+        'Bu bildirim 1 dakika sonra geldi! Saat: ${scheduledTime.hour}:${scheduledTime.minute.toString().padLeft(2, '0')}',
         scheduledTime,
         const NotificationDetails(
           android: AndroidNotificationDetails(
@@ -292,12 +324,44 @@ class NotificationService {
 
       if (kDebugMode) {
         debugPrint("✅ Test bildirimi zamanlandı: $scheduledTime");
+        debugPrint("🕐 Şu anki zaman: $now");
       }
     } catch (e) {
       if (kDebugMode) {
         debugPrint("❌ Test bildirimi zamanlama hatası: $e");
       }
     }
+  }
+
+  // İzin durumlarını kontrol et
+  static Future<Map<String, bool>> checkPermissions() async {
+    final permissions = <String, bool>{};
+    
+    try {
+      permissions['notification'] = await Permission.notification.isGranted;
+      permissions['scheduleExactAlarm'] = await Permission.scheduleExactAlarm.isGranted;
+      
+      final androidImpl = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      
+      if (androidImpl != null) {
+        permissions['areNotificationsEnabled'] = 
+            await androidImpl.areNotificationsEnabled() ?? false;
+      }
+      
+      if (kDebugMode) {
+        debugPrint("📱 İzin durumları:");
+        permissions.forEach((key, value) {
+          debugPrint("  - $key: $value");
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint("❌ İzin kontrolü hatası: $e");
+      }
+    }
+    
+    return permissions;
   }
 
   static tz.TZDateTime getTurkeyTime() {
