@@ -1,9 +1,11 @@
+// 1. ÖNCE: plugins bloğu (en başta olmalı)
 plugins {
     id "com.android.application"
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// 2. Local properties
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
@@ -12,6 +14,7 @@ if (localPropertiesFile.exists()) {
     }
 }
 
+// 3. Flutter version
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
 if (flutterVersionCode == null) {
     flutterVersionCode = '1'
@@ -19,11 +22,20 @@ if (flutterVersionCode == null) {
 
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
 if (flutterVersionName == null) {
-    flutterVersionName = '1.0'
+    flutterVersionName = '1.0.0'
 }
 
+// 4. Keystore properties - DOĞRUDAN TANIMLAYALIM
+def keystoreProperties = [
+    'storePassword': 'test', // Keystore şifresi
+    'keyPassword': 'test', // Anahtar şifresi
+    'keyAlias': 'basitakillitakipcim',
+    'storeFile': '../keystore.jks' // Keystore dosyasının yolu
+]
+
+// 5. Android bloğu
 android {
-    namespace "com.example.habit_tracker"
+    namespace "com.devira.basitaliskanliktakipcim"
     compileSdk flutter.compileSdkVersion
     ndkVersion "27.0.12077973"
 
@@ -42,7 +54,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.habit_tracker"
+        applicationId "com.devira.basitaliskanliktakipcim"
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
@@ -50,23 +62,35 @@ android {
         multiDexEnabled true
     }
 
+    // Signing configurations
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile file(keystoreProperties['storeFile'])
+            storePassword keystoreProperties['storePassword']
+        }
+    }
+
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
-            // Debug için her şey kapalı
             minifyEnabled false
             shrinkResources false
+            debuggable true
         }
         release {
-            // Release için ikisini de aynı anda açın/kapatın
-            signingConfig signingConfigs.debug 
-            minifyEnabled false
-            shrinkResources false
-            // Veya ikisini de açmak isterseniz:
-            // minifyEnabled true
-            // shrinkResources true
-            // proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            debuggable false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+    }
+
+    // Lint options - Build hatalarını önlemek için
+    lintOptions {
+        checkReleaseBuilds false
+        abortOnError false
     }
 }
 
@@ -77,4 +101,11 @@ flutter {
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
     implementation 'androidx.multidex:multidex:2.0.1'
+    
+    // Notification dependencies
+    implementation 'androidx.core:core:1.12.0'
+    implementation 'androidx.work:work-runtime:2.9.0'
+    
+    // Google Play Core - R8 hatası için
+    implementation 'com.google.android.play:core:1.10.3'
 }

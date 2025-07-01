@@ -14,11 +14,29 @@
     <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    
+    <!-- Foreground service izinleri -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:label="Basit : Alışkanlık Takipçim"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        
+        <!-- Notification channels için meta-data -->
+        <meta-data
+            android:name="com.dexterous.flutterlocalnotifications.default_notification_channel_id"
+            android:value="habit_tracker_channel" />
+            
+        <meta-data
+            android:name="com.dexterous.flutterlocalnotifications.default_notification_channel_name"
+            android:value="Alışkanlık Hatırlatıcıları" />
+            
+        <meta-data
+            android:name="com.dexterous.flutterlocalnotifications.default_notification_channel_description"
+            android:value="Alışkanlık takibi için bildirimler" />
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -72,7 +90,11 @@
             android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
             android:exported="false"
             android:enabled="true"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <meta-data
+                android:name="android.app.foreground_service_type"
+                android:value="specialUse" />
+        </service>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
