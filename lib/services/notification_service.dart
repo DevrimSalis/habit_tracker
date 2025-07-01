@@ -15,7 +15,6 @@ class NotificationService {
 
   factory NotificationService() => _instance;
 
-  // main.dart'ta çağrılacak init metodu
   static Future<void> init() async {
     await initialize();
   }
@@ -23,8 +22,24 @@ class NotificationService {
   static Future<void> initialize() async {
     try {
       tz.initializeTimeZones();
-      // Türkiye saat dilimini ayarla
       tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
+
+      // Android kanalı oluştur
+      const AndroidNotificationChannel channel = AndroidNotificationChannel(
+        'habit_reminders',
+        'Alışkanlık Hatırlatmaları',
+        description: 'Günlük alışkanlık hatırlatma bildirimleri',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+        enableLights: true,
+        ledColor: Color(0xFF667eea),
+      );
+
+      // Kanalı sisteme kaydet
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
 
       const AndroidInitializationSettings initializationSettingsAndroid =
           AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -34,6 +49,7 @@ class NotificationService {
         requestAlertPermission: true,
         requestBadgePermission: true,
         requestSoundPermission: true,
+        requestCriticalPermission: false,
       );
 
       const InitializationSettings initializationSettings =
@@ -47,11 +63,13 @@ class NotificationService {
         onDidReceiveNotificationResponse: _onNotificationTapped,
       );
 
-      // Türkçe bildirim izni iste
+      // İzinleri iste
       await _requestNotificationPermissions();
 
       if (kDebugMode) {
-        debugPrint("✅ NotificationService başarıyla başlatıldı (Türkiye saati)");
+        debugPrint("✅ NotificationService başarıyla başlatıldı");
+        // Test bildirimi gönder
+        await showTestNotification();
       }
     } catch (e) {
       if (kDebugMode) {
@@ -60,46 +78,58 @@ class NotificationService {
     }
   }
 
-  // Türkçe bildirim izinleri
   static Future<void> _requestNotificationPermissions() async {
-    // Android için
-    if (await Permission.notification.isDenied) {
-      final status = await Permission.notification.request();
-      if (kDebugMode) {
-        debugPrint("📱 Bildirim izni durumu: $status");
+    try {
+      // Android 13+ için bildirim izni
+      if (await Permission.notification.isDenied) {
+        final status = await Permission.notification.request();
+        if (kDebugMode) {
+          debugPrint("📱 Bildirim izni: $status");
+        }
       }
-    }
 
-    // Android 12+ için tam alarm izni
-    if (await Permission.scheduleExactAlarm.isDenied) {
-      final status = await Permission.scheduleExactAlarm.request();
+      // Tam alarm izni
+      if (await Permission.scheduleExactAlarm.isDenied) {
+        final status = await Permission.scheduleExactAlarm.request();
+        if (kDebugMode) {
+          debugPrint("⏰ Tam alarm izni: $status");
+        }
+      }
+
+      // Android için ek izinler
+      final androidImpl = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      
+      if (androidImpl != null) {
+        final bool? result = await androidImpl.requestNotificationsPermission();
+        if (kDebugMode) {
+          debugPrint("📱 Android bildirim izni: $result");
+        }
+      }
+    } catch (e) {
       if (kDebugMode) {
-        debugPrint("⏰ Tam zamanlı alarm izni durumu: $status");
+        debugPrint("❌ İzin hatası: $e");
       }
     }
   }
 
-  // Bildirime tıklandığında çalışır
   static void _onNotificationTapped(NotificationResponse response) {
     if (kDebugMode) {
-      debugPrint("Bildirime tıklandı: ${response.payload}");
+      debugPrint("📱 Bildirime tıklandı: ${response.payload}");
     }
-    // Burada istediğiniz işlemi yapabilirsiniz
   }
 
   static Future<void> scheduleHabitReminder(Habit habit) async {
     if (!habit.isReminderEnabled || habit.reminderTime == null) return;
 
     try {
-      // Mevcut bildirimi iptal et
       await cancelHabitReminder(habit.id!);
 
-      // Türkiye saati ile şimdiki zaman
       final now = tz.TZDateTime.now(tz.getLocation('Europe/Istanbul'));
       final reminderTime = habit.reminderTime!;
              
-      // Hatırlatma zamanını Türkiye saati ile ayarla
-      final notificationTime = tz.TZDateTime(
+      // Hatırlatma zamanını hesapla
+      var notificationTime = tz.TZDateTime(
         tz.getLocation('Europe/Istanbul'),
         now.year,
         now.month,
@@ -109,15 +139,16 @@ class NotificationService {
       );
 
       // Eğer zaman geçmişse, ertesi güne ayarla
-      final scheduledTime = notificationTime.isBefore(now)
-          ? notificationTime.add(const Duration(days: 1))
-          : notificationTime;
+      if (notificationTime.isBefore(now)) {
+        notificationTime = notificationTime.add(const Duration(days: 1));
+      }
 
+      // Günlük tekrarlama için
       await flutterLocalNotificationsPlugin.zonedSchedule(
         habit.id!,
         '🔔 Alışkanlık Hatırlatması',
         '${habit.name} yapma zamanı geldi! 💪',
-        scheduledTime,
+        notificationTime,
         const NotificationDetails(
           android: AndroidNotificationDetails(
             'habit_reminders',
@@ -128,24 +159,32 @@ class NotificationService {
             icon: '@mipmap/ic_launcher',
             enableVibration: true,
             playSound: true,
-            sound: RawResourceAndroidNotificationSound('notification'),
-            ticker: 'Alışkanlık hatırlatması',
+            autoCancel: false,
+            ongoing: false,
+            ticker: 'Alışkanlık zamanı!',
+            color: Color(0xFF667eea),
+            // Tam ekran bildirim
+            fullScreenIntent: true,
+            // Kategori
+            category: AndroidNotificationCategory.reminder,
           ),
           iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentBadge: true,
             presentSound: true,
             sound: 'default',
+            categoryIdentifier: 'habit_reminder',
           ),
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.time,
+        matchDateTimeComponents: DateTimeComponents.time, // Günlük tekrar
         uiLocalNotificationDateInterpretation: 
             UILocalNotificationDateInterpretation.absoluteTime,
       );
 
       if (kDebugMode) {
-        debugPrint("✅ Hatırlatma zamanlandı: ${habit.name} - ${formatTimeOfDay(reminderTime)} (Türkiye saati)");
+        debugPrint("✅ Hatırlatma zamanlandı: ${habit.name} - ${formatTimeOfDay(reminderTime)}");
+        debugPrint("📅 Zamanlanan saat: $notificationTime");
       }
     } catch (e) {
       if (kDebugMode) {
@@ -180,34 +219,41 @@ class NotificationService {
     }
   }
 
-  // Test bildirimi gönder
+  // Test bildirimi - hemen gönderilir
   static Future<void> showTestNotification() async {
     try {
       const AndroidNotificationDetails androidDetails = 
           AndroidNotificationDetails(
-        'test_channel',
-        'Test Bildirimleri',
+        'habit_reminders',
+        'Alışkanlık Hatırlatmaları',
         channelDescription: 'Test amaçlı bildirimler',
         importance: Importance.high,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
         ticker: 'Test bildirimi',
+        color: Color(0xFF667eea),
+        playSound: true,
+        enableVibration: true,
       );
 
       const NotificationDetails notificationDetails = NotificationDetails(
         android: androidDetails,
-        iOS: DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
       );
 
       await flutterLocalNotificationsPlugin.show(
         999,
         '🎉 Test Bildirimi',
-        'Bildirim sistemi Türkiye saati ile çalışıyor!',
+        'Bildirim sistemi çalışıyor! ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
         notificationDetails,
       );
       
       if (kDebugMode) {
-        debugPrint("✅ Test bildirimi gönderildi (Türkiye saati)");
+        debugPrint("✅ Test bildirimi gönderildi");
       }
     } catch (e) {
       if (kDebugMode) {
@@ -216,21 +262,63 @@ class NotificationService {
     }
   }
 
-  // Türkiye saati ile şimdiki zamanı al
+  // 1 dakika sonra test bildirimi
+  static Future<void> scheduleTestNotification() async {
+    try {
+      final now = tz.TZDateTime.now(tz.getLocation('Europe/Istanbul'));
+      final scheduledTime = now.add(const Duration(minutes: 1));
+
+      await flutterLocalNotificationsPlugin.zonedSchedule(
+        998,
+        '⏰ Zamanlı Test',
+        'Bu bildirim 1 dakika sonra geldi!',
+        scheduledTime,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'habit_reminders',
+            'Alışkanlık Hatırlatmaları',
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@mipmap/ic_launcher',
+            color: Color(0xFF667eea),
+            playSound: true,
+            enableVibration: true,
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: 
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+
+      if (kDebugMode) {
+        debugPrint("✅ Test bildirimi zamanlandı: $scheduledTime");
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint("❌ Test bildirimi zamanlama hatası: $e");
+      }
+    }
+  }
+
   static tz.TZDateTime getTurkeyTime() {
     return tz.TZDateTime.now(tz.getLocation('Europe/Istanbul'));
   }
 
-  // Saat formatını Türkiye formatına çevir
   static String formatTurkeyTime(DateTime dateTime) {
     final turkeyDateTime = tz.TZDateTime.from(dateTime, tz.getLocation('Europe/Istanbul'));
     return '${turkeyDateTime.hour.toString().padLeft(2, '0')}:${turkeyDateTime.minute.toString().padLeft(2, '0')}';
   }
 
-  // Bekleyen hatırlatmaları listele
   static Future<List<PendingNotificationRequest>> getPendingReminders() async {
     try {
-      return await flutterLocalNotificationsPlugin.pendingNotificationRequests();
+      final pending = await flutterLocalNotificationsPlugin.pendingNotificationRequests();
+      if (kDebugMode) {
+        debugPrint("📋 Bekleyen bildirimler: ${pending.length}");
+        for (var notification in pending) {
+          debugPrint("  - ID: ${notification.id}, Başlık: ${notification.title}");
+        }
+      }
+      return pending;
     } catch (e) {
       if (kDebugMode) {
         debugPrint("❌ Bekleyen hatırlatmaları alma hatası: $e");
@@ -240,8 +328,6 @@ class NotificationService {
   }
 
   static String formatTimeOfDay(TimeOfDay time) {
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 }

@@ -46,33 +46,43 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
   }
 
   Future<void> _selectTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: _reminderTime ?? TimeOfDay.now(),
-      builder: (context, child) {
-        return Theme(
+  final TimeOfDay? picked = await showTimePicker(
+    context: context,
+    initialTime: _reminderTime ?? TimeOfDay.now(),
+    // 24 saatlik format için MediaQuery kullanın
+    builder: (context, child) {
+      return MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          alwaysUse24HourFormat: true, // 24 saatlik format zorla
+        ),
+        child: Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
               primary: Color(0xFF667eea),
               onPrimary: Colors.white,
               onSurface: Color(0xFF2D3748),
             ),
+            timePickerTheme: const TimePickerThemeData(
+              hourMinuteTextStyle: TextStyle(fontSize: 24),
+              // Türkçe yerelleştirme
+              helpTextStyle: TextStyle(fontSize: 16),
+            ),
           ),
           child: child!,
-        );
-      },
-    );
-    
-    if (picked != null) {
-      setState(() {
-        _reminderTime = picked;
-        if (!_isReminderEnabled) {
-          _isReminderEnabled = true;
-        }
-      });
-    }
+        ),
+      );
+    },
+  );
+  
+  if (picked != null) {
+    setState(() {
+      _reminderTime = picked;
+      if (!_isReminderEnabled) {
+        _isReminderEnabled = true;
+      }
+    });
   }
-
+}
   String _formatTimeOfDay(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
