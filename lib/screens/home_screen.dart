@@ -69,6 +69,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -87,6 +89,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showSuccessSnackBar(String message) {
+    if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -121,7 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Modern App Bar
               Container(
                 padding: const EdgeInsets.all(20),
                 child: Row(
@@ -165,7 +168,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               
-              // Content Area
               Expanded(
                 child: Container(
                   decoration: const BoxDecoration(
@@ -315,7 +317,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHabitsList() {
     return Column(
       children: [
-        // Stats Header
         Container(
           margin: const EdgeInsets.all(20),
           padding: const EdgeInsets.all(20),
@@ -384,7 +385,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         
-        // Habits List
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -434,6 +434,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _deleteHabit(Habit habit) async {
+    if (!mounted) return;
+    
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

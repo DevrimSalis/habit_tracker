@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/services/notification_service.dart';
 import '../models/habit.dart';
@@ -17,11 +16,9 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   
-  // Hatırlatma için yeni değişkenler
   bool _isReminderEnabled = false;
   TimeOfDay? _reminderTime;
 
-  // Önceden tanımlanmış alışkanlık örnekleri
   final List<Map<String, String>> _habitTemplates = [
     {'name': 'Su İçmek', 'description': 'Günde 8 bardak su içmek', 'icon': '💧'},
     {'name': 'Spor Yapmak', 'description': '30 dakika egzersiz yapmak', 'icon': '🏃‍♂️'},
@@ -48,155 +45,183 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
   }
 
   Future<void> _selectTime() async {
-  final TimeOfDay? picked = await showTimePicker(
-    context: context,
-    initialTime: _reminderTime ?? TimeOfDay.now(),
-    // 24 saatlik format için MediaQuery kullanın
-    builder: (context, child) {
-      return MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          alwaysUse24HourFormat: true, // 24 saatlik format zorla
-        ),
-        child: Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF667eea),
-              onPrimary: Colors.white,
-              onSurface: Color(0xFF2D3748),
-            ),
-            timePickerTheme: const TimePickerThemeData(
-              hourMinuteTextStyle: TextStyle(fontSize: 24),
-              // Türkçe yerelleştirme
-              helpTextStyle: TextStyle(fontSize: 16),
-            ),
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _reminderTime ?? TimeOfDay.now(),
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            alwaysUse24HourFormat: true,
           ),
-          child: child!,
-        ),
-      );
-    },
-  );
-  
-  if (picked != null) {
-    setState(() {
-      _reminderTime = picked;
-      if (!_isReminderEnabled) {
-        _isReminderEnabled = true;
-      }
-    });
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: const ColorScheme.light(
+                primary: Color(0xFF667eea),
+                onPrimary: Colors.white,
+                onSurface: Color(0xFF2D3748),
+              ),
+              timePickerTheme: const TimePickerThemeData(
+                hourMinuteTextStyle: TextStyle(fontSize: 24),
+                helpTextStyle: TextStyle(fontSize: 16),
+              ),
+            ),
+            child: child!,
+          ),
+        );
+      },
+    );
+    
+    if (picked != null) {
+      setState(() {
+        _reminderTime = picked;
+        if (!_isReminderEnabled) {
+          _isReminderEnabled = true;
+        }
+      });
+    }
   }
-}
+
   String _formatTimeOfDay(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
 
-Future<void> _saveHabit() async {
-  if (!_formKey.currentState!.validate()) return;
+  Future<void> _saveHabit() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  setState(() {
-    _isLoading = true;
-  });
+    setState(() {
+      _isLoading = true;
+    });
 
-  try {
-    // Eğer hatırlatma etkinse, önce izinleri kontrol et
-    if (_isReminderEnabled && _reminderTime != null) {
-      if (kDebugMode) {
-        debugPrint("🔔 Hatırlatma etkin, izinler kontrol ediliyor...");
-      }
+    try {
+      bool hasPermissions = true;
       
-      // İzinleri kontrol et ve gerekirse iste
-      final hasPermissions = await NotificationService.requestAllPermissions();
-      
-      if (!hasPermissions) {
-        if (!mounted) return;
+      if (_isReminderEnabled && _reminderTime != null) {
+        hasPermissions = await NotificationService.checkAllPermissions();
         
-        // İzin alamadıysak kullanıcıyı uyar
-        final shouldContinue = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Bildirim İzni Gerekli'),
-            content: const Text(
-              'Hatırlatmalar için bildirim izni gerekli. '
-              'Alışkanlığı kaydedip sonra ayarlardan izinleri verebilirsiniz. '
-              'Devam etmek istiyor musunuz?'
+        if (!hasPermissions) {
+          if (!mounted) return;
+          
+          final shouldRequestPermissions = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.notifications_outlined, color: Color(0xFF667eea)),
+                  SizedBox(width: 12),
+                  Text('Bildirim İzni Gerekli'),
+                ],
+              ),
+              content: const Text(
+                'Hatırlatmalar için bildirim izinlerine ihtiyaç var. '
+                'Şimdi izinleri verebilir veya hatırlatma olmadan devam edebilirsiniz.'
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Hatırlatmasız Devam Et'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF667eea),
+                  ),
+                  child: const Text('İzinleri Ver', style: TextStyle(color: Colors.white)),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('İptal'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await NotificationService.openNotificationSettings();
-                  if (context.mounted) Navigator.pop(context, false);
-                },
-                child: const Text('Ayarlara Git'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Devam Et'),
-              ),
-            ],
-          ),
-        );
-        
-        if (shouldContinue != true) {
-          setState(() {
-            _isLoading = false;
-          });
-          return;
+          );
+          
+          if (shouldRequestPermissions == true) {
+            hasPermissions = await NotificationService.requestAllPermissions();
+            
+            if (!hasPermissions) {
+              if (!mounted) return;
+              
+              final shouldOpenSettings = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('İzin Gerekli'),
+                  content: const Text(
+                    'Bildirimler için manuel olarak izin vermeniz gerekiyor. '
+                    'Ayarları açarak uygulamaya bildirim izni verebilirsiniz.'
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Hatırlatmasız Devam Et'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF667eea),
+                      ),
+                      child: const Text('Ayarlara Git', style: TextStyle(color: Colors.white)),
+                    ),
+                  ],
+                ),
+              );
+              
+              if (shouldOpenSettings == true) {
+                await NotificationService.openNotificationSettings();
+                await Future.delayed(const Duration(seconds: 1));
+                hasPermissions = await NotificationService.checkAllPermissions();
+              }
+            }
+          } else {
+            setState(() {
+              _isReminderEnabled = false;
+              _reminderTime = null;
+            });
+          }
         }
       }
-    }
 
-    final habit = Habit(
-      name: _nameController.text.trim(),
-      description: _descriptionController.text.trim(),
-      createdDate: DateTime.now(),
-      completedDates: [],
-      reminderTime: _isReminderEnabled ? _reminderTime : null,
-      isReminderEnabled: _isReminderEnabled,
-    );
+      final habit = Habit(
+        name: _nameController.text.trim(),
+        description: _descriptionController.text.trim(),
+        createdDate: DateTime.now(),
+        completedDates: [],
+        reminderTime: (_isReminderEnabled && hasPermissions) ? _reminderTime : null,
+        isReminderEnabled: (_isReminderEnabled && hasPermissions),
+      );
 
-    // Alışkanlığı veritabanına kaydet
-    await DatabaseHelper().insertHabit(habit);
+      await DatabaseHelper().insertHabit(habit);
 
-    // Kaydedilen alışkanlığı geri al (ID ile birlikte)
-    final savedHabits = await DatabaseHelper().getHabits();
-    final savedHabit = savedHabits.lastWhere((h) => h.name == habit.name);
+      final savedHabits = await DatabaseHelper().getHabits();
+      final savedHabit = savedHabits.lastWhere((h) => h.name == habit.name);
 
-    // Hatırlatma zamanla
-    if (savedHabit.isReminderEnabled && savedHabit.reminderTime != null) {
-      await NotificationService.scheduleHabitReminder(savedHabit);
+      if (savedHabit.isReminderEnabled && savedHabit.reminderTime != null) {
+        await NotificationService.scheduleHabitReminder(savedHabit);
+      }
+
+      if (!mounted) return;
+
+      _showSuccessSnackBar(
+        savedHabit.isReminderEnabled 
+          ? 'Alışkanlık ve hatırlatma başarıyla eklendi!'
+          : 'Alışkanlık başarıyla eklendi!'
+      );
+      Navigator.pop(context, true);
       
-      if (kDebugMode) {
-        debugPrint("✅ Hatırlatma zamanlandı: ${savedHabit.name}");
-        
-        // Test amaçlı hemen bir test bildirimi gönder
-        await NotificationService.testNotificationWithFullCheck();
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackBar('Alışkanlık eklenirken hata oluştu: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
-
-    if (!mounted) return;
-
-    _showSuccessSnackBar('Alışkanlık başarıyla eklendi!');
-    Navigator.pop(context, true);
-    
-  } catch (e) {
-    if (!mounted) return;
-    
-    debugPrint("❌ Alışkanlık kaydetme hatası: $e");
-    _showErrorSnackBar('Alışkanlık eklenirken hata oluştu: $e');
-  } finally {
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
-}
+
   void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -215,6 +240,8 @@ Future<void> _saveHabit() async {
   }
 
   void _showSuccessSnackBar(String message) {
+    if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -249,7 +276,6 @@ Future<void> _saveHabit() async {
         child: SafeArea(
           child: Column(
             children: [
-              // Modern App Bar
               Container(
                 padding: const EdgeInsets.all(20),
                 child: Row(
@@ -315,7 +341,6 @@ Future<void> _saveHabit() async {
                 ),
               ),
               
-              // Content Area
               Expanded(
                 child: Container(
                   decoration: const BoxDecoration(
@@ -355,7 +380,6 @@ Future<void> _saveHabit() async {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Hızlı Seçenekler
             const Text(
               'Hızlı Seçenekler',
               style: TextStyle(
@@ -430,7 +454,6 @@ Future<void> _saveHabit() async {
             
             const SizedBox(height: 32),
             
-            // Alışkanlık Detayları
             const Text(
               'Alışkanlık Detayları',
               style: TextStyle(
@@ -441,7 +464,6 @@ Future<void> _saveHabit() async {
             ),
             const SizedBox(height: 16),
             
-            // Alışkanlık Adı
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -500,7 +522,6 @@ Future<void> _saveHabit() async {
             
             const SizedBox(height: 16),
             
-            // Açıklama
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -551,7 +572,6 @@ Future<void> _saveHabit() async {
             
             const SizedBox(height: 24),
             
-            // Hatırlatma Ayarları
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -597,7 +617,6 @@ Future<void> _saveHabit() async {
                     ),
                     const SizedBox(height: 16),
                     
-                    // Hatırlatma Açık/Kapalı
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -623,7 +642,6 @@ Future<void> _saveHabit() async {
                       ],
                     ),
                     
-                    // Zaman Seçici
                     if (_isReminderEnabled) ...[
                       const SizedBox(height: 16),
                       Container(
@@ -682,66 +700,8 @@ Future<void> _saveHabit() async {
               ),
             ),
             
-            const SizedBox(height: 24),
-            
-            // Motivasyon Kutusu
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF667eea).withValues(alpha: 0.1),
-                    const Color(0xFF764ba2).withValues(alpha: 0.1),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0xFF667eea).withValues(alpha: 0.2),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF667eea).withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.lightbulb_rounded,
-                      color: Color(0xFF667eea),
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'İpucu',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2D3748),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Küçük ve ölçülebilir hedefler belirleyin. Örneğin: "Spor yapmak" yerine "30 dakika yürüyüş yapmak"',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF4A5568),
-                      height: 1.5,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-            
             const SizedBox(height: 32),
             
-            // Kaydet Butonu
             Container(
               width: double.infinity,
               height: 56,
