@@ -1,6 +1,44 @@
-# Flutter Local Notifications - Temel koruma
--keep class com.dexterous.** { *; }
+# GSON - KRİTİK FIX
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class com.google.gson.** { *; }
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
+-keep public class * implements java.lang.reflect.Type
+-dontwarn com.google.gson.**
+
+# Flutter Local Notifications - GSON İLE UYUMLU
+-keep class com.dexterous.flutterlocalnotifications.** { *; }
+-keep class com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver { 
+    <init>(...);
+    public void onReceive(android.content.Context, android.content.Intent);
+    *;
+}
+-keep class com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver {
+    <init>(...); 
+    public void onReceive(android.content.Context, android.content.Intent);
+    *;
+}
+
+# Type Token Fix - EN ÖNEMLİSİ
+-keep class * extends com.google.gson.reflect.TypeToken {
+    <init>();
+    <fields>;
+    <methods>;
+}
+
+# Reflection koruması
+-keepattributes EnclosingMethod
+-keepattributes InnerClasses
+-keepattributes RuntimeVisibleAnnotations
+-keepattributes RuntimeVisibleParameterAnnotations
+
+# Flutter Plugin Registry
 -keep class io.flutter.plugins.** { *; }
+-keep class io.flutter.plugin.common.** { *; }
+-keep class io.flutter.embedding.engine.plugins.** { *; }
+
+# Flutter Local Notifications - Temel koruma
 -dontwarn com.dexterous.flutterlocalnotifications.**
 
 # Android Bildirim Sistemi - KRİTİK
@@ -12,14 +50,6 @@
 -keep class android.app.AlarmManager** { *; }
 
 # Bildirim Receivers - ÇOK ÖNEMLİ
--keep class com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver { 
-    <init>(...);
-    public void onReceive(android.content.Context, android.content.Intent);
-}
--keep class com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver {
-    <init>(...); 
-    public void onReceive(android.content.Context, android.content.Intent);
-}
 -keep class com.dexterous.flutterlocalnotifications.ForegroundService {
     <init>(...);
     public int onStartCommand(android.content.Intent, int, int);
@@ -58,6 +88,8 @@
 # Timezone - Bildirim zamanlaması için
 -keep class org.threeten.bp.** { *; }
 -dontwarn org.threeten.bp.**
+-keep class java.time.** { *; }
+-dontwarn java.time.**
 
 # Kotlin Reflection - Flutter için gerekli
 -keep class kotlin.** { *; }
@@ -131,7 +163,3 @@
 -keep class android.content.Context** { *; }
 -keep class android.app.Application** { *; }
 -keep class android.os.Bundle** { *; }
-
-# Son güvenlik - R8 agresif optimizasyonları engelle
--dontoptimize
--dontobfuscate

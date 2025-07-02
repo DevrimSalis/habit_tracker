@@ -1,16 +1,11 @@
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/timezone.dart' as tz;
-import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/habit.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
-  static FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-      FlutterLocalNotificationsPlugin();
-  
   static const platform = MethodChannel('com.devira.basitaliskanliktakipcim/battery');
 
   NotificationService._internal();
@@ -23,160 +18,121 @@ class NotificationService {
 
   static Future<void> initialize() async {
     try {
-      tz.initializeTimeZones();
-      tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
-
-      const AndroidNotificationChannel channel = AndroidNotificationChannel(
-        'habit_tracker_channel',
-        'Alışkanlık Hatırlatıcıları',
-        description: 'Günlük alışkanlık takibi için bildirimler',
-        importance: Importance.max,
-        playSound: true,
-        enableVibration: true,
-      );
-
-      await flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
-
-      const AndroidInitializationSettings initializationSettingsAndroid =
-          AndroidInitializationSettings('@mipmap/ic_launcher');
-
-      const InitializationSettings initializationSettings =
-          InitializationSettings(android: initializationSettingsAndroid);
-
-      await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+      debugPrint('🚀 NotificationService (AlarmManager) başlatılıyor...');
+      debugPrint('✅ AlarmManager NotificationService başarıyla başlatıldı');
     } catch (e) {
-      // Hata durumunda sessizce devam et
+      debugPrint('❌ NotificationService başlatma hatası: $e');
     }
   }
 
   static Future<bool> requestAllPermissions() async {
     try {
-      // Android 13+ bildirim izni
-      await Permission.notification.request();
+      debugPrint('🔐 İzinler isteniyor...');
       
-      // Exact alarm izni
+      // Temel izinler
+      await Permission.notification.request();
       await Permission.scheduleExactAlarm.request();
 
-      // Native platform izni
+      // Native izinler
       try {
         await platform.invokeMethod('requestNotificationPermission');
+        await platform.invokeMethod('requestBatteryOptimization');
+        debugPrint('🤖 Native izinler istendi');
       } catch (e) {
-        // Hata durumunda devam et
+        debugPrint('⚠️ Native izin hatası: $e');
       }
 
-      // Flutter plugin izni
-      final androidImpl = flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      
-      if (androidImpl != null) {
-        await androidImpl.requestNotificationsPermission();
-        await androidImpl.requestExactAlarmsPermission();
-      }
-
-      return await checkAllPermissions();
+      final hasAllPermissions = await checkAllPermissions();
+      debugPrint(hasAllPermissions ? '✅ Tüm izinler tamam' : '❌ İzinler eksik');
+      return hasAllPermissions;
     } catch (e) {
+      debugPrint('❌ İzin alma genel hatası: $e');
       return false;
     }
   }
 
   static Future<bool> checkAllPermissions() async {
     try {
-      bool hasNotification = await Permission.notification.isGranted;
-      bool hasExactAlarm = await Permission.scheduleExactAlarm.isGranted;
+      final hasNotification = await Permission.notification.isGranted;
+      final hasExactAlarm = await Permission.scheduleExactAlarm.isGranted;
+
+      // Native izinleri kontrol et
+      bool hasBatteryOptimization = false;
       
-      final androidImpl = flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      
-      bool areEnabled = true;
-      if (androidImpl != null) {
-        areEnabled = await androidImpl.areNotificationsEnabled() ?? false;
+      try {
+        hasBatteryOptimization = await platform.invokeMethod('checkBatteryOptimization');
+      } catch (e) {
+        debugPrint('⚠️ Native izin kontrolü hatası: $e');
       }
 
-      return hasNotification && hasExactAlarm && areEnabled;
+      debugPrint('📊 İzin Durumları:');
+      debugPrint('  📱 Bildirim: $hasNotification');
+      debugPrint('  ⏰ Exact Alarm: $hasExactAlarm');
+      debugPrint('  🔋 Pil Opt.: $hasBatteryOptimization');
+
+      return hasNotification && hasExactAlarm;
     } catch (e) {
+      debugPrint('❌ İzin kontrol hatası: $e');
       return false;
     }
   }
 
+  // ALARMMANAGER İLE BİLDİRİM ZAMANLAMA
   static Future<void> scheduleHabitReminder(Habit habit) async {
     if (!habit.isReminderEnabled || habit.reminderTime == null) {
+      debugPrint('⚠️ Hatırlatma kapalı veya saat belirlenmemiş');
       return;
     }
 
     try {
-      await cancelHabitReminder(habit.id!);
+      debugPrint('⏰ ALARMMANAGER ile bildirim zamanlanıyor: "${habit.name}"');
+      
+      // AlarmManager ile zamanla
+      await platform.invokeMethod('scheduleAlarm', {
+        'habitId': habit.id!,
+        'habitName': habit.name,
+        'hour': habit.reminderTime!.hour,
+        'minute': habit.reminderTime!.minute,
+      });
 
-      final now = DateTime.now();
-      final reminderTime = habit.reminderTime!;
-              
-      var notificationDateTime = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        reminderTime.hour,
-        reminderTime.minute,
-      );
+      debugPrint('✅ AlarmManager bildirimi zamanlandı: ${habit.name}');
 
-      if (notificationDateTime.isBefore(now) || notificationDateTime.isAtSameMomentAs(now)) {
-        notificationDateTime = notificationDateTime.add(const Duration(days: 1));
+      // Test için - 10 saniye sonra (debug modda)
+      if (kDebugMode) {
+        final now = DateTime.now();
+        final testTime = now.add(const Duration(seconds: 10));
+        
+        await platform.invokeMethod('scheduleAlarm', {
+          'habitId': habit.id! + 999,
+          'habitName': '🧪 TEST: ${habit.name}',
+          'hour': testTime.hour,
+          'minute': testTime.minute,
+        });
+
+        debugPrint('🧪 Test alarm 10 saniye sonra zamanlandı');
       }
 
-      // DOĞRUDAN TZDateTime oluştur - TELEFONDA ÇALIŞIR
-      final notificationTime = tz.TZDateTime(
-        tz.getLocation('Europe/Istanbul'),
-        notificationDateTime.year,
-        notificationDateTime.month,
-        notificationDateTime.day,
-        notificationDateTime.hour,
-        notificationDateTime.minute,
-      );
-
-      await flutterLocalNotificationsPlugin.zonedSchedule(
-        habit.id!,
-        '🔔 Alışkanlık Hatırlatması',
-        '${habit.name} yapma zamanı geldi! 💪',
-        notificationTime,
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'habit_tracker_channel',
-            'Alışkanlık Hatırlatıcıları',
-            channelDescription: 'Günlük alışkanlık takibi için bildirimler',
-            importance: Importance.max,
-            priority: Priority.max,
-            icon: '@mipmap/ic_launcher',
-            enableVibration: true,
-            playSound: true,
-            autoCancel: false,
-            fullScreenIntent: true,
-            category: AndroidNotificationCategory.alarm,
-            visibility: NotificationVisibility.public,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.time,
-        uiLocalNotificationDateInterpretation: 
-            UILocalNotificationDateInterpretation.absoluteTime,
-      );
     } catch (e) {
-      // Hata durumunda sessizce devam et
+      debugPrint('❌ AlarmManager zamanlama hatası: $e');
     }
   }
 
   static Future<void> cancelHabitReminder(int habitId) async {
     try {
-      await flutterLocalNotificationsPlugin.cancel(habitId);
+      await platform.invokeMethod('cancelAlarm', {'habitId': habitId});
+      await platform.invokeMethod('cancelAlarm', {'habitId': habitId + 999}); // Test
+      debugPrint('🗑️ AlarmManager bildirimi iptal edildi: ID $habitId');
     } catch (e) {
-      // Hata durumunda sessizce devam et
+      debugPrint('❌ Alarm iptal hatası: $e');
     }
   }
 
   static Future<void> openNotificationSettings() async {
     try {
       await platform.invokeMethod('openNotificationSettings');
+      debugPrint('⚙️ Bildirim ayarları açıldı');
     } catch (e) {
-      // Hata durumunda sessizce devam et
+      debugPrint('❌ Ayarlar açma hatası: $e');
     }
   }
 

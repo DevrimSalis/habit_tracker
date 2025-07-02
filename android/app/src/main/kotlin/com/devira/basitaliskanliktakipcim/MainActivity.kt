@@ -17,6 +17,9 @@ import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.util.Log
+import android.app.AlarmManager
+import android.app.PendingIntent
+import java.util.*
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.devira.basitaliskanliktakipcim/battery"
@@ -49,6 +52,19 @@ class MainActivity: FlutterActivity() {
                         openNotificationSettings()
                         result.success(true)
                     }
+                    "scheduleAlarm" -> {
+                        val habitId = call.argument<Int>("habitId") ?: 0
+                        val habitName = call.argument<String>("habitName") ?: ""
+                        val hour = call.argument<Int>("hour") ?: 0
+                        val minute = call.argument<Int>("minute") ?: 0
+                        scheduleAlarm(habitId, habitName, hour, minute)
+                        result.success(true)
+                    }
+                    "cancelAlarm" -> {
+                        val habitId = call.argument<Int>("habitId") ?: 0
+                        cancelAlarm(habitId)
+                        result.success(true)
+                    }
                     else -> {
                         result.notImplemented()
                     }
@@ -57,6 +73,91 @@ class MainActivity: FlutterActivity() {
                 Log.e(TAG, "Method channel error: ${e.message}", e)
                 result.error("ERROR", e.message, null)
             }
+        }
+    }
+
+    // ALARMMANAGER İLE BİLDİRİM ZAMANLAMA - EKRAN KİLİTLİ İÇİN
+    private fun scheduleAlarm(habitId: Int, habitName: String, hour: Int, minute: Int) {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            
+            // Önce varsa iptal et
+            cancelAlarm(habitId)
+            
+            // Alarm receiver intent'i
+            val intent = Intent(this, AlarmReceiver::class.java).apply {
+                putExtra("habit_id", habitId)
+                putExtra("habit_name", habitName)
+            }
+            
+            val pendingIntent = PendingIntent.getBroadcast(
+                this,
+                habitId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            // Alarm zamanını hesapla
+            val calendar = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
+                set(Calendar.SECOND, 0)
+                
+                // Eğer geçmişse yarına al
+                if (timeInMillis <= System.currentTimeMillis()) {
+                    add(Calendar.DAY_OF_YEAR, 1)
+                }
+            }
+            
+            // ALARM ZAMANLA - EN AGRESIF YOL
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                }
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT -> {
+                    alarmManager.setExact(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                }
+                else -> {
+                    alarmManager.set(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                }
+            }
+            
+            Log.d(TAG, "⏰ Alarm zamanlandı: $habitName - ${calendar.time}")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "scheduleAlarm error: ${e.message}", e)
+        }
+    }
+    
+    // ALARM İPTAL ETME
+    private fun cancelAlarm(habitId: Int) {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, AlarmReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                this,
+                habitId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            alarmManager.cancel(pendingIntent)
+            Log.d(TAG, "🗑️ Alarm iptal edildi: $habitId")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "cancelAlarm error: ${e.message}", e)
         }
     }
 
@@ -81,7 +182,7 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    // Pil optimizasyonu kontrolü
+    // MEVCUT METODLAR...
     private fun checkBatteryOptimization(): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -90,7 +191,7 @@ class MainActivity: FlutterActivity() {
                 Log.d(TAG, "🔋 Pil optimizasyonu durumu: $isOptimized")
                 isOptimized
             } else {
-                false // Android 6.0 altında pil optimizasyonu yok
+                false
             }
         } catch (e: Exception) {
             Log.e(TAG, "Pil optimizasyonu kontrolü hatası: ${e.message}", e)
@@ -98,7 +199,6 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    // Pil optimizasyonu isteme
     private fun requestBatteryOptimization() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -116,7 +216,6 @@ class MainActivity: FlutterActivity() {
                         Log.d(TAG, "✅ Pil optimizasyonu ayarları açıldı")
                     } catch (e: Exception) {
                         Log.w(TAG, "Direkt pil optimizasyonu açılamadı, genel ayarlara yönlendiriliyor", e)
-                        // Fallback - genel pil optimizasyonu ayarlarına git
                         val fallbackIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                         startActivity(fallbackIntent)
                     }
@@ -129,7 +228,6 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    // Bildirim izni isteme
     private fun requestNotificationPermission() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -153,12 +251,10 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    // Bildirim izni kontrolü
     private fun checkNotificationPermission(): Boolean {
         return try {
             when {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                    // Android 13+ için POST_NOTIFICATIONS izni kontrol et
                     val hasPermission = ContextCompat.checkSelfPermission(
                         this, 
                         Manifest.permission.POST_NOTIFICATIONS
@@ -168,8 +264,6 @@ class MainActivity: FlutterActivity() {
                     hasPermission
                 }
                 else -> {
-                    // Android 13 altında bildirimler varsayılan olarak açık
-                    // Ama kullanıcı ayarlardan kapatmış olabilir
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     val areEnabled = notificationManager.areNotificationsEnabled()
                     
@@ -183,7 +277,6 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    // Bildirim ayarlarını açma
     private fun openNotificationSettings() {
         try {
             val intent = Intent().apply {
@@ -220,18 +313,6 @@ class MainActivity: FlutterActivity() {
                         Log.d(TAG, "✅ Bildirim izni kullanıcı tarafından verildi")
                     } else {
                         Log.w(TAG, "❌ Bildirim izni kullanıcı tarafından reddedildi")
-                        
-                        // Kullanıcı "bir daha sorma" seçtiyse
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(
-                                this, 
-                                Manifest.permission.POST_NOTIFICATIONS
-                            )
-                            
-                            if (!shouldShowRationale) {
-                                Log.w(TAG, "⚠️ Kullanıcı 'bir daha sorma' seçti, manuel ayarlara yönlendirilmesi gerekiyor")
-                            }
-                        }
                     }
                 }
             }
@@ -243,7 +324,6 @@ class MainActivity: FlutterActivity() {
     override fun onResume() {
         super.onResume()
         try {
-            // Her döndüğünde izin durumunu logla
             val hasNotificationPermission = checkNotificationPermission()
             val isBatteryOptimized = checkBatteryOptimization()
             
