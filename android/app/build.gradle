@@ -23,8 +23,8 @@ if (flutterVersionName == null) {
 }
 
 def keystoreProperties = [
-    'storePassword': 'test',
-    'keyPassword': 'test',
+    'storePassword': 'Fenerbahce111',
+    'keyPassword': 'Fenerbahce111',
     'keyAlias': 'basitakillitakipcim',
     'storeFile': '../keystore.jks'
 ]
